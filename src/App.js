@@ -283,7 +283,7 @@ const TaskList = ({ tasks, onDeleteTask }) => (
       {tasks.length === 0 ? (
         <p className="text-gray-500">No tasks scheduled yet.</p>
       ) : (
-        [...tasks].sort((a,b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)).map(task => (
+        tasks.map(task => (
           <div key={task.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-md">
             <div className="flex items-center gap-3">
               <Icon name={task.icon} className="text-indigo-500" size={20} />
@@ -335,7 +335,7 @@ export default function App() {
       return false; // Indicate failure
     }
     
-    setTasks(prevTasks => [...prevTasks, { ...newTask, id: Date.now() }]);
+    setTasks(prevTasks => [{ ...newTask, id: Date.now() }, ...prevTasks]);
     return true; // Indicate success
   };
 
