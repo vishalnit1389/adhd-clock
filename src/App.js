@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Coffee, BookOpen, Briefcase, Dumbbell, Bed, Utensils, ShoppingCart, Music, Plane, Heart, BrainCircuit, Tv, Gamepad2, Sun } from 'lucide-react';
+import { Plus, Trash2, Coffee, BookOpen, Briefcase, Dumbbell, Bed, Utensils, ShoppingCart, Music, Plane, Heart, BrainCircuit, Tv, Gamepad2, Sun, ArrowLeft } from 'lucide-react';
 
 // --- Icon Component ---
 // A simple component to render the correct Lucide icon based on its name.
@@ -38,21 +38,80 @@ const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
 const describeArc = (x, y, radius, startAngle, endAngle) => {
   const start = polarToCartesian(x, y, radius, endAngle);
   const end = polarToCartesian(x, y, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  // Correct the largeArcFlag logic for a full circle
+  const arcSweep = endAngle - startAngle <= 180 ? "0" : "1";
   return [
     "M", start.x, start.y,
-    "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y
+    "A", radius, radius, 0, arcSweep, 0, end.x, end.y
   ].join(" ");
 };
 
-// --- Clock Component ---
-const Clock = ({ tasks, currentTime }) => {
-  const size = 320;
-  const strokeWidth = 30;
-  const center = size / 2;
-  const radius = center - strokeWidth;
 
-  // Memoize tasks for the current hour to avoid recalculation on every render.
+// --- Focus View Component ---
+const FocusView = ({ task, currentTime, onExit }) => {
+  const size = Math.min(window.innerWidth * 0.8, window.innerHeight * 0.6, 500);
+  const strokeWidth = 40;
+  const center = size / 2;
+  const radius = center - strokeWidth / 2;
+  
+  const progress = useMemo(() => {
+    if (!task) return { remainingPercentage: 100, timeLeft: 0 };
+    const start = timeToMinutes(task.startTime);
+    const end = timeToMinutes(task.endTime);
+    const duration = end - start;
+    if (duration <= 0) return { remainingPercentage: 100, timeLeft: 0 };
+
+    const nowInMinutes = currentTime.getHours() * 60 + currentTime.getMinutes() + currentTime.getSeconds() / 60;
+    const elapsed = nowInMinutes - start;
+    const elapsedPercentage = Math.min(Math.max((elapsed / duration) * 100, 0), 100);
+    return {
+      remainingPercentage: 100 - elapsedPercentage,
+      timeLeft: Math.ceil(duration - elapsed),
+    };
+  }, [task, currentTime]);
+  
+  const endAngle = progress.remainingPercentage / 100 * 359.99; // 359.99 to avoid SVG closing the circle
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+       <button onClick={onExit} className="absolute top-4 left-4 flex items-center gap-2 text-gray-600 hover:text-indigo-600">
+           <ArrowLeft size={20}/> Back to dashboard
+       </button>
+       <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-800">{task.name}</h1>
+            <p className="text-xl text-gray-500">{task.startTime} - {task.endTime}</p>
+       </div>
+       <div className="relative" style={{ width: size, height: size }}>
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                {/* Background full arc (greyed out) */}
+                <circle cx={center} cy={center} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={strokeWidth} />
+                {/* Foreground remaining time arc */}
+                <path
+                  d={describeArc(center, center, radius, 0, endAngle)}
+                  fill="none"
+                  stroke="#4f46e5"
+                  strokeWidth={strokeWidth}
+                  strokeLinecap="round"
+                 />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                 <Icon name={task.icon} className="text-indigo-500" size={60} />
+                 <p className="font-bold text-6xl text-indigo-600 mt-4">{Math.round(progress.remainingPercentage)}%</p>
+                 <p className="text-lg text-gray-500">{progress.timeLeft} minutes remaining</p>
+            </div>
+       </div>
+    </div>
+  );
+};
+
+
+// --- Clock Component ---
+const Clock = ({ tasks, currentTime, onFocusTask }) => {
+  const size = 320;
+  const center = size / 2;
+  const maxStroke = 45; // Max possible thickness for an arc
+  const trackRadius = center - (maxStroke / 2) - 5; // Centerline for all arcs
+
   const tasksForCurrentHour = useMemo(() => {
     const currentHour = currentTime.getHours();
     return tasks.filter(task => {
@@ -60,11 +119,25 @@ const Clock = ({ tasks, currentTime }) => {
       return taskStartHour === currentHour;
     }).sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
   }, [tasks, currentTime]);
+
+  const totalTaskMinutes = useMemo(() => {
+    return tasksForCurrentHour.reduce((sum, task) => {
+        const start = timeToMinutes(task.startTime);
+        const end = timeToMinutes(task.endTime);
+        return sum + (end - start);
+    }, 0);
+  }, [tasksForCurrentHour]);
+
+  const dynamicStrokeWidth = useMemo(() => {
+    const minStroke = 15; // Min thickness for a packed hour
+    if (totalTaskMinutes <= 0) return minStroke;
+    const percentage = Math.min(totalTaskMinutes / 60, 1.0);
+    return maxStroke - (percentage * (maxStroke - minStroke));
+  }, [totalTaskMinutes]);
   
   const currentMinuteInHour = currentTime.getMinutes() + currentTime.getSeconds() / 60;
   const timeHandAngle = (currentMinuteInHour / 60) * 360;
 
-  // Find the currently active task.
   const activeTask = useMemo(() => {
       const nowInMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
       return tasks.find(task => {
@@ -74,7 +147,6 @@ const Clock = ({ tasks, currentTime }) => {
       });
   }, [tasks, currentTime]);
 
-  // Calculate the progress through the current task.
   const taskProgress = useMemo(() => {
     if (!activeTask) return null;
     const start = timeToMinutes(activeTask.startTime);
@@ -84,8 +156,7 @@ const Clock = ({ tasks, currentTime }) => {
 
     const nowInMinutes = currentTime.getHours() * 60 + currentTime.getMinutes() + currentTime.getSeconds() / 60;
     const elapsed = nowInMinutes - start;
-    const elapsedPercentage = Math.min(Math.max((elapsed / duration) * 100, 0), 100);
-    const remainingPercentage = 100 - elapsedPercentage;
+    const remainingPercentage = 100 - ((elapsed / duration) * 100);
     
     return {
         name: activeTask.name,
@@ -98,32 +169,24 @@ const Clock = ({ tasks, currentTime }) => {
     <div className="flex flex-col items-center justify-center p-4 space-y-4">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-          {/* Base Circle */}
-          <circle cx={center} cy={center} r={radius} fill="none" stroke="#e0e0e0" strokeWidth={strokeWidth} />
-
-          {/* Task Arcs */}
+          <circle cx={center} cy={center} r={trackRadius} fill="none" stroke="#e0e0e0" strokeWidth={15} />
           {tasksForCurrentHour.map((task, index) => {
             const startMinute = parseInt(task.startTime.split(':')[1], 10);
             const endMinute = parseInt(task.endTime.split(':')[1], 10);
-            
             const startAngle = (startMinute / 60) * 360;
             const endAngle = (endMinute / 60) * 360;
-            
-            // Assign a color from a predefined list.
             const colors = ['#818cf8', '#fb923c', '#4ade80', '#f87171', '#60a5fa', '#a78bfa'];
             const color = colors[index % colors.length];
-
-            // Calculate icon position
             const iconAngle = startAngle + (endAngle - startAngle) / 2;
-            const iconPos = polarToCartesian(center, center, radius, iconAngle);
+            const iconPos = polarToCartesian(center, center, trackRadius, iconAngle);
             
             return (
               <g key={task.id}>
                 <path
-                  d={describeArc(center, center, radius, startAngle, endAngle)}
+                  d={describeArc(center, center, trackRadius, startAngle, endAngle)}
                   fill="none"
                   stroke={color}
-                  strokeWidth={strokeWidth}
+                  strokeWidth={dynamicStrokeWidth}
                 />
                 <foreignObject x={iconPos.x - 12} y={iconPos.y - 12} width="24" height="24">
                    <Icon name={task.icon} className="text-white" size={20} />
@@ -131,31 +194,14 @@ const Clock = ({ tasks, currentTime }) => {
               </g>
             );
           })}
-          
-           {/* Time Hand */}
-           <line
-            x1={center}
-            y1={center}
-            x2={polarToCartesian(center, center, radius - strokeWidth / 2 - 5, timeHandAngle).x}
-            y2={polarToCartesian(center, center, radius - strokeWidth / 2 - 5, timeHandAngle).y}
-            stroke="#1e293b"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <line
-            x1={center}
-            y1={center}
-            x2={polarToCartesian(center, center, -20, timeHandAngle).x}
-            y2={polarToCartesian(center, center, -20, timeHandAngle).y}
-            stroke="#1e293b"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
+           <line x1={center} y1={center} x2={polarToCartesian(center, center, trackRadius - (maxStroke / 2) - 5, timeHandAngle).x} y2={polarToCartesian(center, center, trackRadius - (maxStroke / 2) - 5, timeHandAngle).y} stroke="#1e293b" strokeWidth="2" strokeLinecap="round" />
+           <line x1={center} y1={center} x2={polarToCartesian(center, center, -20, timeHandAngle).x} y2={polarToCartesian(center, center, -20, timeHandAngle).y} stroke="#1e293b" strokeWidth="2" strokeLinecap="round" />
            <circle cx={center} cy={center} r="5" fill="#1e293b" />
         </svg>
-        
-        {/* Central Display */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <div 
+          className={`absolute inset-0 flex flex-col items-center justify-center text-center ${activeTask ? 'cursor-pointer hover:bg-gray-50/50 rounded-full' : ''}`}
+          onClick={() => activeTask && onFocusTask(activeTask)}
+        >
             {taskProgress ? (
                  <div className="px-2">
                     <p className="text-gray-500 text-sm font-medium truncate">{taskProgress.name}</p>
@@ -198,7 +244,6 @@ const TaskForm = ({ onAddTask }) => {
       return;
     }
     
-    // Validate that times are in the same hour.
     const startHour = parseInt(startTime.split(':')[0], 10);
     const endHour = parseInt(endTime.split(':')[0], 10);
     if(startHour !== endHour) {
@@ -227,48 +272,26 @@ const TaskForm = ({ onAddTask }) => {
     <form onSubmit={handleSubmit} className="p-4 bg-white rounded-lg shadow-md space-y-4 w-full max-w-sm">
       <h3 className="text-lg font-semibold text-gray-700">Add New Task</h3>
       {error && <p className="text-red-500 text-sm">{error}</p>}
-      <input
-        type="text"
-        placeholder="Task Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400"
-      />
+      <input type="text" placeholder="Task Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400" />
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="startTime" className="block text-sm font-medium text-gray-700">Start Time</label>
-          <input
-            id="startTime"
-            type="time"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-            className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 min-h-[42px]"
-          />
+          <input id="startTime" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 min-h-[42px]" />
         </div>
         <div>
           <label htmlFor="endTime" className="block text-sm font-medium text-gray-700">End Time</label>
-          <input
-            id="endTime"
-            type="time"
-            value={endTime}
-            onChange={(e) => setEndTime(e.target.value)}
-            className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 min-h-[42px]"
-          />
+          <input id="endTime" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 min-h-[42px]" />
         </div>
       </div>
       <div className="flex items-center gap-4">
         <span className="text-gray-600">Icon:</span>
         <select value={icon} onChange={(e) => setIcon(e.target.value)} className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400">
-          {availableIcons.map(iconName => (
-            <option key={iconName} value={iconName}>{iconName}</option>
-          ))}
+          {availableIcons.map(iconName => (<option key={iconName} value={iconName}>{iconName}</option>))}
         </select>
          <Icon name={icon} className="text-indigo-500" />
       </div>
-
       <button type="submit" className="w-full bg-indigo-500 text-white p-2 rounded-md hover:bg-indigo-600 flex items-center justify-center gap-2">
-        <Plus size={18} />
-        Add Task
+        <Plus size={18} /> Add Task
       </button>
     </form>
   );
@@ -280,9 +303,7 @@ const TaskList = ({ tasks, onDeleteTask }) => (
   <div className="p-4 bg-white rounded-lg shadow-md w-full max-w-sm">
     <h3 className="text-lg font-semibold text-gray-700 mb-3">Today's Tasks</h3>
     <div className="space-y-3 max-h-60 overflow-y-auto">
-      {tasks.length === 0 ? (
-        <p className="text-gray-500">No tasks scheduled yet.</p>
-      ) : (
+      {tasks.length === 0 ? (<p className="text-gray-500">No tasks scheduled yet.</p>) : (
         tasks.map(task => (
           <div key={task.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-md">
             <div className="flex items-center gap-3">
@@ -302,18 +323,41 @@ const TaskList = ({ tasks, onDeleteTask }) => (
   </div>
 );
 
+// --- Main Dashboard View ---
+const MainDashboard = ({ tasks, currentTime, onAddTask, onDeleteTask, onFocusTask }) => (
+    <div className="min-h-screen bg-gray-100 font-sans">
+      <header className="bg-white shadow-sm">
+        <div className="container mx-auto px-4 py-4 flex items-center gap-3">
+          <BrainCircuit className="text-indigo-500" size={32}/>
+          <h1 className="text-2xl font-bold text-gray-800">Time Awareness Clock</h1>
+        </div>
+      </header>
+      <main className="container mx-auto p-4">
+        <div className="flex flex-col lg:flex-row gap-8 justify-center items-start">
+          <div className="w-full lg:w-auto flex justify-center">
+            <Clock tasks={tasks} currentTime={currentTime} onFocusTask={onFocusTask} />
+          </div>
+          <div className="w-full lg:w-auto flex flex-col items-center gap-8">
+            <TaskForm onAddTask={onAddTask} />
+            <TaskList tasks={tasks} onDeleteTask={onDeleteTask} />
+          </div>
+        </div>
+      </main>
+    </div>
+);
+
 
 // --- Main App Component ---
 export default function App() {
+  const [view, setView] = useState('dashboard'); // 'dashboard' or 'focus'
+  const [focusedTask, setFocusedTask] = useState(null);
   const [tasks, setTasks] = useState([
-      // Default tasks for demonstration
       { id: 1, name: 'Morning Coffee', startTime: '08:00', endTime: '08:10', icon: 'Coffee' },
       { id: 2, name: 'Team Standup', startTime: '09:15', endTime: '09:30', icon: 'Briefcase' },
       { id: 3, name: 'Read a Chapter', startTime: '08:30', endTime: '08:55', icon: 'BookOpen' }
   ]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Update current time every second
   useEffect(() => {
     const timerId = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timerId);
@@ -322,8 +366,6 @@ export default function App() {
   const handleAddTask = (newTask) => {
     const newStartTime = timeToMinutes(newTask.startTime);
     const newEndTime = timeToMinutes(newTask.endTime);
-    
-    // Check for overlaps with existing tasks
     const isOverlapping = tasks.some(task => {
         const existingStartTime = timeToMinutes(task.startTime);
         const existingEndTime = timeToMinutes(task.endTime);
@@ -332,42 +374,38 @@ export default function App() {
 
     if (isOverlapping) {
       console.error("Overlap detected!");
-      return false; // Indicate failure
+      return false;
     }
     
     setTasks(prevTasks => [{ ...newTask, id: Date.now() }, ...prevTasks]);
-    return true; // Indicate success
+    return true;
   };
 
   const handleDeleteTask = (taskId) => {
     setTasks(tasks.filter(task => task.id !== taskId));
   };
 
+  const handleFocusTask = (task) => {
+    setFocusedTask(task);
+    setView('focus');
+  };
+
+  const handleExitFocus = () => {
+    setFocusedTask(null);
+    setView('dashboard');
+  };
+
+  if (view === 'focus' && focusedTask) {
+    return <FocusView task={focusedTask} currentTime={currentTime} onExit={handleExitFocus} />;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100 font-sans">
-      <header className="bg-white shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center gap-3">
-          <BrainCircuit className="text-indigo-500" size={32}/>
-          <h1 className="text-2xl font-bold text-gray-800">Time Awareness Clock</h1>
-        </div>
-      </header>
-      
-      <main className="container mx-auto p-4">
-        <div className="flex flex-col lg:flex-row gap-8 justify-center items-start">
-          
-          {/* Left Column: Clock */}
-          <div className="w-full lg:w-auto flex justify-center">
-            <Clock tasks={tasks} currentTime={currentTime} />
-          </div>
-
-          {/* Right Column: Forms and Lists */}
-          <div className="w-full lg:w-auto flex flex-col items-center gap-8">
-            <TaskForm onAddTask={handleAddTask} />
-            <TaskList tasks={tasks} onDeleteTask={handleDeleteTask} />
-          </div>
-
-        </div>
-      </main>
-    </div>
+    <MainDashboard 
+        tasks={tasks}
+        currentTime={currentTime}
+        onAddTask={handleAddTask}
+        onDeleteTask={handleDeleteTask}
+        onFocusTask={handleFocusTask}
+    />
   );
 }
