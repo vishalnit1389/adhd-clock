@@ -235,18 +235,26 @@ const TaskForm = ({ onAddTask }) => {
         className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400"
       />
       <div className="grid grid-cols-2 gap-4">
-        <input
-          type="time"
-          value={startTime}
-          onChange={(e) => setStartTime(e.target.value)}
-          className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400"
-        />
-        <input
-          type="time"
-          value={endTime}
-          onChange={(e) => setEndTime(e.target.value)}
-          className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400"
-        />
+        <div>
+          <label htmlFor="startTime" className="block text-sm font-medium text-gray-700">Start Time</label>
+          <input
+            id="startTime"
+            type="time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 min-h-[42px]"
+          />
+        </div>
+        <div>
+          <label htmlFor="endTime" className="block text-sm font-medium text-gray-700">End Time</label>
+          <input
+            id="endTime"
+            type="time"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+            className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 min-h-[42px]"
+          />
+        </div>
       </div>
       <div className="flex items-center gap-4">
         <span className="text-gray-600">Icon:</span>
